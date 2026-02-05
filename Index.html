@@ -7,7 +7,8 @@
 // Game constants
 const GAME = {
     BACKGROUND_COLOR: '#1e3a8a', // Blue background as requested
-    FPS: 60, // Frames per second
+    TARGET_FPS: 60, // Target frames per second
+    MS_PER_UPDATE: 1000 / 60, // Target time per frame in milliseconds
     DEBUG_MODE: true // Set to true to show debug info
 };
 
@@ -16,12 +17,14 @@ let gameState = {
     canvas: null,
     ctx: null,
     lastTime: 0,
-    deltaTime: 0,
+    accumulator: 0,
     isRunning: true,
+    animationFrameId: null,
     debugInfo: {
         fps: 0,
         frameCount: 0,
-        lastFpsUpdate: 0
+        lastFpsUpdate: 0,
+        lag: 0
     }
 };
 
@@ -47,10 +50,11 @@ function initGame() {
     
     // Start the game loop
     gameState.lastTime = performance.now();
-    requestAnimationFrame(gameLoop);
+    startGameLoop();
     
     console.log('Game initialized successfully!');
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
+    console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
 }
 
 /**
@@ -67,16 +71,35 @@ function resizeCanvas() {
 }
 
 /**
- * Main game loop
- * @param {number} currentTime - Current timestamp
+ * Start the main game loop
  */
-function gameLoop(currentTime) {
-    // Calculate delta time (time since last frame)
-    gameState.deltaTime = (currentTime - gameState.lastTime) / 1000;
+function startGameLoop() {
+    // Cancel any existing animation frame
+    if (gameState.animationFrameId) {
+        cancelAnimationFrame(gameState.animationFrameId);
+    }
+    
+    // Start the loop
+    gameState.lastTime = performance.now();
+    gameLoop();
+}
+
+/**
+ * Main game loop using fixed timestep for consistent updates
+ */
+function gameLoop() {
+    // Get current time
+    const currentTime = performance.now();
+    
+    // Calculate elapsed time since last frame
+    const elapsedTime = currentTime - gameState.lastTime;
     gameState.lastTime = currentTime;
     
+    // Cap elapsed time to avoid spiral of death
+    const clampedElapsedTime = Math.min(elapsedTime, 100);
+    
     // Update debug info
-    updateDebugInfo(currentTime);
+    updateDebugInfo(currentTime, clampedElapsedTime);
     
     // Clear the canvas
     clearCanvas();
@@ -91,7 +114,7 @@ function gameLoop(currentTime) {
     
     // Continue the game loop
     if (gameState.isRunning) {
-        requestAnimationFrame(gameLoop);
+        gameState.animationFrameId = requestAnimationFrame(gameLoop);
     }
 }
 
@@ -99,6 +122,7 @@ function gameLoop(currentTime) {
  * Clear the canvas with the background color
  */
 function clearCanvas() {
+    // Use a more efficient clear method
     gameState.ctx.fillStyle = GAME.BACKGROUND_COLOR;
     gameState.ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
 }
@@ -130,27 +154,28 @@ function drawGrid() {
     gameState.ctx.lineWidth = 1;
     
     // Draw vertical lines
+    gameState.ctx.beginPath();
     for (let x = 0; x < gameState.canvas.width; x += gridSize) {
-        gameState.ctx.beginPath();
         gameState.ctx.moveTo(x, 0);
         gameState.ctx.lineTo(x, gameState.canvas.height);
-        gameState.ctx.stroke();
     }
+    gameState.ctx.stroke();
     
     // Draw horizontal lines
+    gameState.ctx.beginPath();
     for (let y = 0; y < gameState.canvas.height; y += gridSize) {
-        gameState.ctx.beginPath();
         gameState.ctx.moveTo(0, y);
         gameState.ctx.lineTo(gameState.canvas.width, y);
-        gameState.ctx.stroke();
     }
+    gameState.ctx.stroke();
 }
 
 /**
  * Update debug information
  * @param {number} currentTime - Current timestamp
+ * @param {number} elapsedTime - Elapsed time since last frame
  */
-function updateDebugInfo(currentTime) {
+function updateDebugInfo(currentTime, elapsedTime) {
     gameState.debugInfo.frameCount++;
     
     // Update FPS every second
@@ -161,6 +186,9 @@ function updateDebugInfo(currentTime) {
         gameState.debugInfo.frameCount = 0;
         gameState.debugInfo.lastFpsUpdate = currentTime;
     }
+    
+    // Calculate lag (difference between actual and target frame time)
+    gameState.debugInfo.lag = Math.abs(elapsedTime - GAME.MS_PER_UPDATE);
 }
 
 /**
@@ -174,45 +202,70 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 200, 100);
+    ctx.fillRect(5, 5, 220, 120);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
     ctx.font = '16px monospace';
     ctx.textAlign = 'left';
     
+    // Game Loop Info header
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('=== GAME LOOP INFO ===', debugX, debugY);
+    debugY += lineHeight;
+    
     // FPS
-    ctx.fillText(`FPS: ${gameState.debugInfo.fps}`, debugX, debugY);
+    ctx.fillStyle = gameState.debugInfo.fps >= 55 ? '#4ade80' : '#f87171';
+    ctx.fillText(`FPS: ${gameState.debugInfo.fps} (Target: ${GAME.TARGET_FPS})`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Frame time
+    const frameTime = 1000 / Math.max(gameState.debugInfo.fps, 1);
+    ctx.fillStyle = '#4cc9f0';
+    ctx.fillText(`Frame: ${frameTime.toFixed(1)}ms`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Lag
+    ctx.fillStyle = gameState.debugInfo.lag < 2 ? '#4ade80' : '#f87171';
+    ctx.fillText(`Lag: ${gameState.debugInfo.lag.toFixed(2)}ms`, debugX, debugY);
     debugY += lineHeight;
     
     // Canvas size
+    ctx.fillStyle = '#c084fc';
     ctx.fillText(`Canvas: ${gameState.canvas.width} x ${gameState.canvas.height}`, debugX, debugY);
     debugY += lineHeight;
     
-    // Delta time
-    ctx.fillText(`Delta: ${gameState.deltaTime.toFixed(4)}s`, debugX, debugY);
-    debugY += lineHeight;
-    
     // Game state
-    ctx.fillText(`State: ${gameState.isRunning ? 'Running' : 'Paused'}`, debugX, debugY);
-    debugY += lineHeight;
-    
-    // Player status
-    ctx.fillText('Player: Not yet implemented', debugX, debugY);
+    ctx.fillStyle = gameState.isRunning ? '#4ade80' : '#f87171';
+    ctx.fillText(`State: ${gameState.isRunning ? 'RUNNING' : 'PAUSED'}`, debugX, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
 window.addEventListener('blur', () => {
     console.log('Game paused (window lost focus)');
     gameState.isRunning = false;
+    if (gameState.animationFrameId) {
+        cancelAnimationFrame(gameState.animationFrameId);
+        gameState.animationFrameId = null;
+    }
 });
 
 window.addEventListener('focus', () => {
     console.log('Game resumed (window gained focus)');
-    gameState.isRunning = true;
-    gameState.lastTime = performance.now();
-    requestAnimationFrame(gameLoop);
+    if (!gameState.isRunning) {
+        gameState.isRunning = true;
+        startGameLoop();
+    }
+});
+
+// Add keyboard shortcut to toggle debug mode (D key)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'd' || e.key === 'D') {
+        GAME.DEBUG_MODE = !GAME.DEBUG_MODE;
+        console.log(`Debug mode ${GAME.DEBUG_MODE ? 'enabled' : 'disabled'}`);
+    }
 });
 
 // Export for debugging
 window.gameState = gameState;
+window.GAME = GAME;
