@@ -12,6 +12,15 @@ const GAME = {
     DEBUG_MODE: true // Set to true to show debug info
 };
 
+// Player object
+const player = {
+    x: 100,
+    y: 300,
+    width: 40,
+    height: 40,
+    color: '#ef4444' // Red color
+};
+
 // Game state
 let gameState = {
     canvas: null,
@@ -45,6 +54,9 @@ function initGame() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
+    // Position player near bottom of screen
+    positionPlayerNearBottom();
+    
     // Hide loading overlay
     document.getElementById('loadingOverlay').style.display = 'none';
     
@@ -54,7 +66,19 @@ function initGame() {
     
     console.log('Game initialized successfully!');
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
+    console.log('Player position:', player.x, player.y);
     console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
+}
+
+/**
+ * Position player near the bottom of the screen
+ */
+function positionPlayerNearBottom() {
+    // Center player horizontally
+    player.x = (gameState.canvas.width - player.width) / 2;
+    
+    // Position player near bottom (with some margin)
+    player.y = gameState.canvas.height - player.height - 50;
 }
 
 /**
@@ -63,11 +87,32 @@ function initGame() {
 function resizeCanvas() {
     const container = gameState.canvas.parentElement;
     
+    // Store previous canvas size
+    const prevWidth = gameState.canvas.width;
+    const prevHeight = gameState.canvas.height;
+    
     // Set canvas dimensions to match container
     gameState.canvas.width = container.clientWidth;
     gameState.canvas.height = container.clientHeight;
     
+    // Adjust player position to maintain relative position
+    if (prevWidth > 0 && prevHeight > 0) {
+        const xRatio = player.x / prevWidth;
+        const yRatio = player.y / prevHeight;
+        
+        player.x = xRatio * gameState.canvas.width;
+        player.y = yRatio * gameState.canvas.height;
+        
+        // Ensure player doesn't go off screen
+        player.x = Math.max(0, Math.min(player.x, gameState.canvas.width - player.width));
+        player.y = Math.max(0, Math.min(player.y, gameState.canvas.height - player.height));
+    } else {
+        // First time setup
+        positionPlayerNearBottom();
+    }
+    
     console.log('Canvas resized to:', gameState.canvas.width, 'x', gameState.canvas.height);
+    console.log('Player repositioned to:', player.x, player.y);
 }
 
 /**
@@ -106,6 +151,9 @@ function gameLoop() {
     
     // Draw game elements
     drawBackground();
+    
+    // Draw player
+    drawPlayer();
     
     // Draw debug info if enabled
     if (GAME.DEBUG_MODE) {
@@ -171,6 +219,29 @@ function drawGrid() {
 }
 
 /**
+ * Draw the player character
+ */
+function drawPlayer() {
+    // Draw player body (red square)
+    gameState.ctx.fillStyle = player.color;
+    gameState.ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    // Add a subtle inner highlight for visual appeal
+    gameState.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    gameState.ctx.fillRect(player.x + 3, player.y + 3, player.width - 6, 8);
+    
+    // Add a darker border for definition
+    gameState.ctx.strokeStyle = '#991b1b';
+    gameState.ctx.lineWidth = 2;
+    gameState.ctx.strokeRect(player.x, player.y, player.width, player.height);
+    
+    // Draw player "eyes" (small white dots)
+    gameState.ctx.fillStyle = '#ffffff';
+    gameState.ctx.fillRect(player.x + 10, player.y + 12, 6, 6);
+    gameState.ctx.fillRect(player.x + player.width - 16, player.y + 12, 6, 6);
+}
+
+/**
  * Update debug information
  * @param {number} currentTime - Current timestamp
  * @param {number} elapsedTime - Elapsed time since last frame
@@ -202,7 +273,7 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 220, 120);
+    ctx.fillRect(5, 5, 240, 160);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
@@ -238,6 +309,20 @@ function drawDebugInfo() {
     // Game state
     ctx.fillStyle = gameState.isRunning ? '#4ade80' : '#f87171';
     ctx.fillText(`State: ${gameState.isRunning ? 'RUNNING' : 'PAUSED'}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Player info header
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('=== PLAYER INFO ===', debugX, debugY);
+    debugY += lineHeight;
+    
+    // Player position
+    ctx.fillStyle = '#ef4444';
+    ctx.fillText(`Position: (${Math.floor(player.x)}, ${Math.floor(player.y)})`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Player size
+    ctx.fillText(`Size: ${player.width} x ${player.height}`, debugX, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
@@ -269,3 +354,4 @@ window.addEventListener('keydown', (e) => {
 // Export for debugging
 window.gameState = gameState;
 window.GAME = GAME;
+window.player = player;
