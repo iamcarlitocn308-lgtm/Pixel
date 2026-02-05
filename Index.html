@@ -9,7 +9,9 @@ const GAME = {
     BACKGROUND_COLOR: '#1e3a8a', // Blue background as requested
     TARGET_FPS: 60, // Target frames per second
     MS_PER_UPDATE: 1000 / 60, // Target time per frame in milliseconds
-    DEBUG_MODE: true // Set to true to show debug info
+    DEBUG_MODE: true, // Set to true to show debug info
+    PLAYER_SPEED: 300, // Pixels per second
+    PLAYER_FRICTION: 0.85 // Friction coefficient (0-1)
 };
 
 // Player object
@@ -18,7 +20,23 @@ const player = {
     y: 300,
     width: 40,
     height: 40,
-    color: '#ef4444' // Red color
+    color: '#ef4444', // Red color
+    velocityX: 0,
+    velocityY: 0,
+    maxSpeed: 8
+};
+
+// Keyboard input state
+const keys = {
+    a: false,
+    d: false,
+    w: false,
+    s: false,
+    arrowLeft: false,
+    arrowRight: false,
+    arrowUp: false,
+    arrowDown: false,
+    space: false
 };
 
 // Game state
@@ -50,6 +68,9 @@ function initGame() {
     gameState.canvas = document.getElementById('gameCanvas');
     gameState.ctx = gameState.canvas.getContext('2d');
     
+    // Set up keyboard event listeners
+    setupKeyboardControls();
+    
     // Set canvas to full screen
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -68,6 +89,99 @@ function initGame() {
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
     console.log('Player position:', player.x, player.y);
     console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
+}
+
+/**
+ * Set up keyboard event listeners
+ */
+function setupKeyboardControls() {
+    // Key down event
+    window.addEventListener('keydown', (e) => {
+        switch (e.key.toLowerCase()) {
+            case 'a':
+                keys.a = true;
+                break;
+            case 'd':
+                keys.d = true;
+                break;
+            case 'w':
+                keys.w = true;
+                break;
+            case 's':
+                keys.s = true;
+                break;
+            case ' ':
+                keys.space = true;
+                break;
+            case 'arrowleft':
+            case 'left':
+                keys.arrowLeft = true;
+                break;
+            case 'arrowright':
+            case 'right':
+                keys.arrowRight = true;
+                break;
+            case 'arrowup':
+            case 'up':
+                keys.arrowUp = true;
+                break;
+            case 'arrowdown':
+            case 'down':
+                keys.arrowDown = true;
+                break;
+            case 'd':
+                // Don't toggle debug if shift is held
+                if (!e.shiftKey) {
+                    GAME.DEBUG_MODE = !GAME.DEBUG_MODE;
+                    console.log(`Debug mode ${GAME.DEBUG_MODE ? 'enabled' : 'disabled'}`);
+                }
+                break;
+        }
+    });
+    
+    // Key up event
+    window.addEventListener('keyup', (e) => {
+        switch (e.key.toLowerCase()) {
+            case 'a':
+                keys.a = false;
+                break;
+            case 'd':
+                keys.d = false;
+                break;
+            case 'w':
+                keys.w = false;
+                break;
+            case 's':
+                keys.s = false;
+                break;
+            case ' ':
+                keys.space = false;
+                break;
+            case 'arrowleft':
+            case 'left':
+                keys.arrowLeft = false;
+                break;
+            case 'arrowright':
+            case 'right':
+                keys.arrowRight = false;
+                break;
+            case 'arrowup':
+            case 'up':
+                keys.arrowUp = false;
+                break;
+            case 'arrowdown':
+            case 'down':
+                keys.arrowDown = false;
+                break;
+        }
+    });
+    
+    // Prevent arrow key scrolling
+    window.addEventListener('keydown', (e) => {
+        if ([32, 37, 38, 39, 40].indexOf(e.keyCode) > -1) {
+            e.preventDefault();
+        }
+    }, false);
 }
 
 /**
@@ -143,6 +257,12 @@ function gameLoop() {
     // Cap elapsed time to avoid spiral of death
     const clampedElapsedTime = Math.min(elapsedTime, 100);
     
+    // Calculate delta time for smooth movement
+    const deltaTime = clampedElapsedTime / 1000; // Convert to seconds
+    
+    // Update game state
+    updatePlayer(deltaTime);
+    
     // Update debug info
     updateDebugInfo(currentTime, clampedElapsedTime);
     
@@ -163,6 +283,50 @@ function gameLoop() {
     // Continue the game loop
     if (gameState.isRunning) {
         gameState.animationFrameId = requestAnimationFrame(gameLoop);
+    }
+}
+
+/**
+ * Update player position based on velocity and input
+ * @param {number} deltaTime - Time since last frame in seconds
+ */
+function updatePlayer(deltaTime) {
+    // Handle horizontal movement input
+    let moveLeft = keys.a || keys.arrowLeft;
+    let moveRight = keys.d || keys.arrowRight;
+    
+    // Apply acceleration based on input
+    if (moveLeft && !moveRight) {
+        // Move left
+        player.velocityX -= GAME.PLAYER_SPEED * deltaTime;
+    } else if (moveRight && !moveLeft) {
+        // Move right
+        player.velocityX += GAME.PLAYER_SPEED * deltaTime;
+    } else {
+        // Apply friction when no horizontal input
+        player.velocityX *= GAME.PLAYER_FRICTION;
+    }
+    
+    // Limit maximum speed
+    if (Math.abs(player.velocityX) > player.maxSpeed) {
+        player.velocityX = player.maxSpeed * Math.sign(player.velocityX);
+    }
+    
+    // Apply very small friction at all times to prevent tiny perpetual movement
+    if (Math.abs(player.velocityX) < 0.1) {
+        player.velocityX = 0;
+    }
+    
+    // Update position based on velocity
+    player.x += player.velocityX;
+    
+    // Keep player within canvas bounds
+    if (player.x < 0) {
+        player.x = 0;
+        player.velocityX = 0; // Stop movement at boundary
+    } else if (player.x + player.width > gameState.canvas.width) {
+        player.x = gameState.canvas.width - player.width;
+        player.velocityX = 0; // Stop movement at boundary
     }
 }
 
@@ -239,6 +403,21 @@ function drawPlayer() {
     gameState.ctx.fillStyle = '#ffffff';
     gameState.ctx.fillRect(player.x + 10, player.y + 12, 6, 6);
     gameState.ctx.fillRect(player.x + player.width - 16, player.y + 12, 6, 6);
+    
+    // Draw direction indicator based on velocity
+    if (Math.abs(player.velocityX) > 0.5) {
+        gameState.ctx.fillStyle = player.velocityX > 0 ? '#22c55e' : '#3b82f6';
+        const indicatorSize = 8;
+        const indicatorX = player.velocityX > 0 ? 
+            player.x + player.width + 5 : 
+            player.x - indicatorSize - 5;
+        gameState.ctx.fillRect(
+            indicatorX, 
+            player.y + player.height / 2 - indicatorSize / 2, 
+            indicatorSize, 
+            indicatorSize
+        );
+    }
 }
 
 /**
@@ -273,7 +452,7 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 240, 160);
+    ctx.fillRect(5, 5, 260, 180);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
@@ -321,8 +500,27 @@ function drawDebugInfo() {
     ctx.fillText(`Position: (${Math.floor(player.x)}, ${Math.floor(player.y)})`, debugX, debugY);
     debugY += lineHeight;
     
+    // Player velocity
+    ctx.fillStyle = player.velocityX !== 0 ? '#22c55e' : '#94a3b8';
+    ctx.fillText(`Velocity X: ${player.velocityX.toFixed(2)} px/sec`, debugX, debugY);
+    debugY += lineHeight;
+    
     // Player size
     ctx.fillText(`Size: ${player.width} x ${player.height}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Controls info
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('=== CONTROLS ===', debugX, debugY);
+    debugY += lineHeight;
+    
+    // Key states
+    ctx.fillStyle = keys.a || keys.arrowLeft ? '#22c55e' : '#ef4444';
+    ctx.fillText(`A/←: ${keys.a || keys.arrowLeft ? 'PRESSED' : 'RELEASED'}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    ctx.fillStyle = keys.d || keys.arrowRight ? '#22c55e' : '#ef4444';
+    ctx.fillText(`D/→: ${keys.d || keys.arrowRight ? 'PRESSED' : 'RELEASED'}`, debugX, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
@@ -343,15 +541,8 @@ window.addEventListener('focus', () => {
     }
 });
 
-// Add keyboard shortcut to toggle debug mode (D key)
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'd' || e.key === 'D') {
-        GAME.DEBUG_MODE = !GAME.DEBUG_MODE;
-        console.log(`Debug mode ${GAME.DEBUG_MODE ? 'enabled' : 'disabled'}`);
-    }
-});
-
 // Export for debugging
 window.gameState = gameState;
 window.GAME = GAME;
 window.player = player;
+window.keys = keys;
