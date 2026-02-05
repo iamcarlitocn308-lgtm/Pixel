@@ -1,0 +1,218 @@
+/**
+ * 2D Platformer Game
+ * Pure JavaScript implementation using Canvas API
+ * No libraries or frameworks used
+ */
+
+// Game constants
+const GAME = {
+    BACKGROUND_COLOR: '#1e3a8a', // Blue background as requested
+    FPS: 60, // Frames per second
+    DEBUG_MODE: true // Set to true to show debug info
+};
+
+// Game state
+let gameState = {
+    canvas: null,
+    ctx: null,
+    lastTime: 0,
+    deltaTime: 0,
+    isRunning: true,
+    debugInfo: {
+        fps: 0,
+        frameCount: 0,
+        lastFpsUpdate: 0
+    }
+};
+
+// Initialize the game when the page loads
+window.addEventListener('load', initGame);
+
+/**
+ * Initialize the game
+ */
+function initGame() {
+    console.log('Initializing 2D Platformer Game...');
+    
+    // Get canvas and context
+    gameState.canvas = document.getElementById('gameCanvas');
+    gameState.ctx = gameState.canvas.getContext('2d');
+    
+    // Set canvas to full screen
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Hide loading overlay
+    document.getElementById('loadingOverlay').style.display = 'none';
+    
+    // Start the game loop
+    gameState.lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+    
+    console.log('Game initialized successfully!');
+    console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
+}
+
+/**
+ * Resize canvas to fill the screen
+ */
+function resizeCanvas() {
+    const container = gameState.canvas.parentElement;
+    
+    // Set canvas dimensions to match container
+    gameState.canvas.width = container.clientWidth;
+    gameState.canvas.height = container.clientHeight;
+    
+    console.log('Canvas resized to:', gameState.canvas.width, 'x', gameState.canvas.height);
+}
+
+/**
+ * Main game loop
+ * @param {number} currentTime - Current timestamp
+ */
+function gameLoop(currentTime) {
+    // Calculate delta time (time since last frame)
+    gameState.deltaTime = (currentTime - gameState.lastTime) / 1000;
+    gameState.lastTime = currentTime;
+    
+    // Update debug info
+    updateDebugInfo(currentTime);
+    
+    // Clear the canvas
+    clearCanvas();
+    
+    // Draw game elements
+    drawBackground();
+    
+    // Draw debug info if enabled
+    if (GAME.DEBUG_MODE) {
+        drawDebugInfo();
+    }
+    
+    // Continue the game loop
+    if (gameState.isRunning) {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+/**
+ * Clear the canvas with the background color
+ */
+function clearCanvas() {
+    gameState.ctx.fillStyle = GAME.BACKGROUND_COLOR;
+    gameState.ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+}
+
+/**
+ * Draw the game background
+ */
+function drawBackground() {
+    // Draw a simple gradient overlay on top of the solid blue background
+    const gradient = gameState.ctx.createLinearGradient(0, 0, 0, gameState.canvas.height);
+    gradient.addColorStop(0, 'rgba(30, 58, 138, 0.9)'); // Blue at top
+    gradient.addColorStop(1, 'rgba(30, 58, 138, 0.7)'); // Slightly transparent at bottom
+    
+    gameState.ctx.fillStyle = gradient;
+    gameState.ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+    
+    // Draw a subtle grid pattern for visual interest
+    drawGrid();
+}
+
+/**
+ * Draw a subtle grid pattern
+ */
+function drawGrid() {
+    const gridSize = 40;
+    const gridColor = 'rgba(255, 255, 255, 0.05)';
+    
+    gameState.ctx.strokeStyle = gridColor;
+    gameState.ctx.lineWidth = 1;
+    
+    // Draw vertical lines
+    for (let x = 0; x < gameState.canvas.width; x += gridSize) {
+        gameState.ctx.beginPath();
+        gameState.ctx.moveTo(x, 0);
+        gameState.ctx.lineTo(x, gameState.canvas.height);
+        gameState.ctx.stroke();
+    }
+    
+    // Draw horizontal lines
+    for (let y = 0; y < gameState.canvas.height; y += gridSize) {
+        gameState.ctx.beginPath();
+        gameState.ctx.moveTo(0, y);
+        gameState.ctx.lineTo(gameState.canvas.width, y);
+        gameState.ctx.stroke();
+    }
+}
+
+/**
+ * Update debug information
+ * @param {number} currentTime - Current timestamp
+ */
+function updateDebugInfo(currentTime) {
+    gameState.debugInfo.frameCount++;
+    
+    // Update FPS every second
+    if (currentTime - gameState.debugInfo.lastFpsUpdate >= 1000) {
+        gameState.debugInfo.fps = Math.round(
+            (gameState.debugInfo.frameCount * 1000) / (currentTime - gameState.debugInfo.lastFpsUpdate)
+        );
+        gameState.debugInfo.frameCount = 0;
+        gameState.debugInfo.lastFpsUpdate = currentTime;
+    }
+}
+
+/**
+ * Draw debug information on the canvas
+ */
+function drawDebugInfo() {
+    const ctx = gameState.ctx;
+    const debugX = 10;
+    let debugY = 30;
+    const lineHeight = 20;
+    
+    // Draw debug background panel
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(5, 5, 200, 100);
+    
+    // Draw debug text
+    ctx.fillStyle = '#4cc9f0';
+    ctx.font = '16px monospace';
+    ctx.textAlign = 'left';
+    
+    // FPS
+    ctx.fillText(`FPS: ${gameState.debugInfo.fps}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Canvas size
+    ctx.fillText(`Canvas: ${gameState.canvas.width} x ${gameState.canvas.height}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Delta time
+    ctx.fillText(`Delta: ${gameState.deltaTime.toFixed(4)}s`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Game state
+    ctx.fillText(`State: ${gameState.isRunning ? 'Running' : 'Paused'}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Player status
+    ctx.fillText('Player: Not yet implemented', debugX, debugY);
+}
+
+// Handle window focus/blur to pause/resume game
+window.addEventListener('blur', () => {
+    console.log('Game paused (window lost focus)');
+    gameState.isRunning = false;
+});
+
+window.addEventListener('focus', () => {
+    console.log('Game resumed (window gained focus)');
+    gameState.isRunning = true;
+    gameState.lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+});
+
+// Export for debugging
+window.gameState = gameState;
