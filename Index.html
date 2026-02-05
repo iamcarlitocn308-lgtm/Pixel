@@ -13,7 +13,18 @@ const GAME = {
     PLAYER_SPEED: 300, // Pixels per second
     PLAYER_FRICTION: 0.85, // Friction coefficient (0-1)
     GRAVITY: 900, // Pixels per second squared
-    JUMP_FORCE: -400 // Negative because up is negative Y
+    JUMP_FORCE: -400, // Negative because up is negative Y
+    CAMERA_SMOOTHNESS: 0.1 // Higher = more smoothing, 0-1
+};
+
+// Camera object
+const camera = {
+    x: 0,
+    y: 0,
+    width: 800, // Will be set to canvas width
+    height: 600, // Will be set to canvas height
+    targetX: 0, // Target position to follow
+    targetY: 0
 };
 
 // Player object
@@ -39,8 +50,13 @@ const platforms = [
     { x: 500, y: 250, width: 180, height: 20, color: '#8b5cf6' },
     { x: 200, y: 150, width: 120, height: 20, color: '#f59e0b' },
     { x: 600, y: 400, width: 100, height: 20, color: '#ec4899' },
-    // Ground platform
-    { x: 0, y: 550, width: 800, height: 50, color: '#64748b' }
+    // More platforms for a larger world
+    { x: 800, y: 300, width: 200, height: 20, color: '#10b981' },
+    { x: 1100, y: 200, width: 150, height: 20, color: '#3b82f6' },
+    { x: 1300, y: 350, width: 180, height: 20, color: '#8b5cf6' },
+    { x: 1600, y: 250, width: 120, height: 20, color: '#f59e0b' },
+    // Ground platform - spans entire world
+    { x: 0, y: 550, width: 2000, height: 50, color: '#64748b' }
 ];
 
 // Keyboard input state
@@ -72,6 +88,12 @@ let gameState = {
     }
 };
 
+// World boundaries
+const WORLD = {
+    width: 2000,
+    height: 600
+};
+
 // Initialize the game when the page loads
 window.addEventListener('load', initGame);
 
@@ -92,8 +114,16 @@ function initGame() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
+    // Initialize camera
+    camera.width = gameState.canvas.width;
+    camera.height = gameState.canvas.height;
+    
     // Position player on first platform
     positionPlayerOnStartPlatform();
+    
+    // Initialize camera to player position
+    camera.x = player.x - camera.width / 2 + player.width / 2;
+    camera.y = 0; // Camera only follows horizontally
     
     // Hide loading overlay
     document.getElementById('loadingOverlay').style.display = 'none';
@@ -104,8 +134,11 @@ function initGame() {
     
     console.log('Game initialized successfully!');
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
+    console.log('Camera size:', camera.width, 'x', camera.height);
     console.log('Player position:', player.x, player.y);
+    console.log('Camera position:', camera.x, camera.y);
     console.log('Platforms created:', platforms.length);
+    console.log('World size:', WORLD.width, 'x', WORLD.height);
     console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
 }
 
@@ -247,46 +280,94 @@ function resizeCanvas() {
     gameState.canvas.width = container.clientWidth;
     gameState.canvas.height = container.clientHeight;
     
-    // Adjust player position to maintain relative position
+    // Update camera size
+    camera.width = gameState.canvas.width;
+    camera.height = gameState.canvas.height;
+    
+    // Adjust player position to maintain relative position within camera
     if (prevWidth > 0 && prevHeight > 0) {
-        const xRatio = player.x / prevWidth;
-        const yRatio = player.y / prevHeight;
+        // Calculate player's screen position relative to camera
+        const playerScreenX = player.x - camera.x;
+        const playerScreenY = player.y - camera.y;
         
-        player.x = xRatio * gameState.canvas.width;
-        player.y = yRatio * gameState.canvas.height;
+        // Calculate new world position based on screen position
+        player.x = camera.x + (playerScreenX / prevWidth) * gameState.canvas.width;
+        player.y = camera.y + (playerScreenY / prevHeight) * gameState.canvas.height;
         
-        // Ensure player doesn't go off screen
-        player.x = Math.max(0, Math.min(player.x, gameState.canvas.width - player.width));
-        player.y = Math.max(0, Math.min(player.y, gameState.canvas.height - player.height));
+        // Ensure player doesn't go off world boundaries
+        player.x = Math.max(0, Math.min(player.x, WORLD.width - player.width));
+        player.y = Math.max(0, Math.min(player.y, WORLD.height - player.height));
     } else {
         // First time setup
         positionPlayerOnStartPlatform();
     }
     
-    // Adjust platforms to maintain relative positions
-    for (let i = 0; i < platforms.length; i++) {
-        const platform = platforms[i];
-        if (prevWidth > 0 && prevHeight > 0) {
-            const xRatio = platform.x / prevWidth;
-            const yRatio = platform.y / prevHeight;
-            
-            platform.x = xRatio * gameState.canvas.width;
-            platform.y = yRatio * gameState.canvas.height;
-            
-            // Scale platform width proportionally
-            platform.width = (platform.width / prevWidth) * gameState.canvas.width;
-        }
-        
-        // Ensure ground platform spans full width
-        if (i === platforms.length - 1) { // Ground platform is last
-            platform.x = 0;
-            platform.width = gameState.canvas.width;
-            platform.y = gameState.canvas.height - platform.height;
-        }
-    }
-    
     console.log('Canvas resized to:', gameState.canvas.width, 'x', gameState.canvas.height);
+    console.log('Camera resized to:', camera.width, 'x', camera.height);
     console.log('Player repositioned to:', player.x, player.y);
+}
+
+/**
+ * Update camera position to follow player
+ * @param {number} deltaTime - Time since last frame in seconds
+ */
+function updateCamera(deltaTime) {
+    // Set camera target to player position (centered horizontally)
+    camera.targetX = player.x - camera.width / 2 + player.width / 2;
+    
+    // Keep camera within world bounds
+    camera.targetX = Math.max(0, Math.min(camera.targetX, WORLD.width - camera.width));
+    
+    // Smoothly interpolate camera position toward target
+    camera.x += (camera.targetX - camera.x) * GAME.CAMERA_SMOOTHNESS;
+    
+    // Small vertical follow (optional, can be adjusted)
+    camera.targetY = player.y - camera.height / 2 + player.height / 2;
+    camera.targetY = Math.max(0, Math.min(camera.targetY, WORLD.height - camera.height));
+    camera.y += (camera.targetY - camera.y) * GAME.CAMERA_SMOOTHNESS * 0.5; // Slower vertical follow
+}
+
+/**
+ * Convert world coordinates to screen coordinates
+ * @param {number} worldX - World X coordinate
+ * @param {number} worldY - World Y coordinate
+ * @returns {Object} Screen coordinates {x, y}
+ */
+function worldToScreen(worldX, worldY) {
+    return {
+        x: worldX - camera.x,
+        y: worldY - camera.y
+    };
+}
+
+/**
+ * Convert screen coordinates to world coordinates
+ * @param {number} screenX - Screen X coordinate
+ * @param {number} screenY - Screen Y coordinate
+ * @returns {Object} World coordinates {x, y}
+ */
+function screenToWorld(screenX, screenY) {
+    return {
+        x: screenX + camera.x,
+        y: screenY + camera.y
+    };
+}
+
+/**
+ * Check if a world object is visible in the camera view
+ * @param {number} x - World X coordinate
+ * @param {number} y - World Y coordinate
+ * @param {number} width - Object width
+ * @param {number} height - Object height
+ * @returns {boolean} True if object is visible
+ */
+function isInView(x, y, width, height) {
+    return (
+        x + width > camera.x &&
+        x < camera.x + camera.width &&
+        y + height > camera.y &&
+        y < camera.y + camera.height
+    );
 }
 
 /**
@@ -322,6 +403,7 @@ function gameLoop() {
     
     // Update game state
     updatePlayer(deltaTime);
+    updateCamera(deltaTime);
     
     // Update debug info
     updateDebugInfo(currentTime, clampedElapsedTime);
@@ -337,6 +419,9 @@ function gameLoop() {
     
     // Draw player
     drawPlayer();
+    
+    // Draw world boundaries
+    drawWorldBoundaries();
     
     // Draw debug info if enabled
     if (GAME.DEBUG_MODE) {
@@ -433,19 +518,57 @@ function updatePlayer(deltaTime) {
         }
     }
     
-    // Keep player within canvas horizontal bounds
+    // Keep player within world horizontal bounds
     if (player.x < 0) {
         player.x = 0;
         player.velocityX = 0; // Stop movement at boundary
-    } else if (player.x + player.width > gameState.canvas.width) {
-        player.x = gameState.canvas.width - player.width;
+    } else if (player.x + player.width > WORLD.width) {
+        player.x = WORLD.width - player.width;
         player.velocityX = 0; // Stop movement at boundary
     }
     
-    // Prevent player from going above the top of the screen
+    // Prevent player from going above the top of the world
     if (player.y < 0) {
         player.y = 0;
         player.velocityY = 0;
+    }
+    
+    // Prevent player from going below the bottom of the world
+    if (player.y + player.height > WORLD.height) {
+        player.y = WORLD.height - player.height;
+        player.velocityY = 0;
+        player.isOnGround = true;
+    }
+}
+
+/**
+ * Draw world boundaries
+ */
+function drawWorldBoundaries() {
+    // Draw left boundary
+    if (camera.x < 50) {
+        const screenPos = worldToScreen(0, 0);
+        gameState.ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+        gameState.ctx.fillRect(screenPos.x, screenPos.y, 10, camera.height);
+    }
+    
+    // Draw right boundary
+    if (camera.x + camera.width > WORLD.width - 50) {
+        const screenPos = worldToScreen(WORLD.width - 10, 0);
+        gameState.ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+        gameState.ctx.fillRect(screenPos.x, screenPos.y, 10, camera.height);
+    }
+    
+    // Draw world edge markers in debug mode
+    if (GAME.DEBUG_MODE) {
+        const leftEdge = worldToScreen(0, WORLD.height / 2);
+        const rightEdge = worldToScreen(WORLD.width, WORLD.height / 2);
+        
+        gameState.ctx.fillStyle = '#ef4444';
+        gameState.ctx.font = '14px monospace';
+        gameState.ctx.textAlign = 'center';
+        gameState.ctx.fillText('WORLD START', leftEdge.x + 30, leftEdge.y);
+        gameState.ctx.fillText('WORLD END', rightEdge.x - 30, rightEdge.y);
     }
 }
 
@@ -454,22 +577,30 @@ function updatePlayer(deltaTime) {
  */
 function drawPlatforms() {
     for (const platform of platforms) {
+        // Only draw platforms that are in view (performance optimization)
+        if (!isInView(platform.x, platform.y, platform.width, platform.height)) {
+            continue;
+        }
+        
+        // Convert world coordinates to screen coordinates
+        const screenPos = worldToScreen(platform.x, platform.y);
+        
         // Draw platform body
         gameState.ctx.fillStyle = platform.color;
-        gameState.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+        gameState.ctx.fillRect(screenPos.x, screenPos.y, platform.width, platform.height);
         
         // Draw platform top highlight
         gameState.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        gameState.ctx.fillRect(platform.x, platform.y, platform.width, 4);
+        gameState.ctx.fillRect(screenPos.x, screenPos.y, platform.width, 4);
         
         // Draw platform shadow
         gameState.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        gameState.ctx.fillRect(platform.x, platform.y + platform.height, platform.width, 3);
+        gameState.ctx.fillRect(screenPos.x, screenPos.y + platform.height, platform.width, 3);
         
         // Draw platform sides
         gameState.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
         gameState.ctx.lineWidth = 2;
-        gameState.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+        gameState.ctx.strokeRect(screenPos.x, screenPos.y, platform.width, platform.height);
         
         // Draw platform label for debugging
         if (GAME.DEBUG_MODE) {
@@ -477,9 +608,9 @@ function drawPlatforms() {
             gameState.ctx.font = '12px monospace';
             gameState.ctx.textAlign = 'center';
             gameState.ctx.fillText(
-                `Platform ${platforms.indexOf(platform) + 1}`,
-                platform.x + platform.width / 2,
-                platform.y + platform.height / 2 + 4
+                `P${platforms.indexOf(platform) + 1}`,
+                screenPos.x + platform.width / 2,
+                screenPos.y + platform.height / 2 + 4
             );
         }
     }
@@ -506,33 +637,41 @@ function drawBackground() {
     gameState.ctx.fillStyle = gradient;
     gameState.ctx.fillRect(0, 0, gameState.canvas.width, gameState.canvas.height);
     
-    // Draw a subtle grid pattern for visual interest
+    // Draw a subtle grid pattern for visual interest (world space)
     drawGrid();
 }
 
 /**
- * Draw a subtle grid pattern
+ * Draw a subtle grid pattern in world space
  */
 function drawGrid() {
-    const gridSize = 40;
+    const gridSize = 80;
     const gridColor = 'rgba(255, 255, 255, 0.05)';
     
     gameState.ctx.strokeStyle = gridColor;
     gameState.ctx.lineWidth = 1;
     
+    // Calculate visible grid area
+    const startX = Math.floor(camera.x / gridSize) * gridSize;
+    const endX = Math.ceil((camera.x + camera.width) / gridSize) * gridSize;
+    const startY = Math.floor(camera.y / gridSize) * gridSize;
+    const endY = Math.ceil((camera.y + camera.height) / gridSize) * gridSize;
+    
     // Draw vertical lines
     gameState.ctx.beginPath();
-    for (let x = 0; x < gameState.canvas.width; x += gridSize) {
-        gameState.ctx.moveTo(x, 0);
-        gameState.ctx.lineTo(x, gameState.canvas.height);
+    for (let x = startX; x <= endX; x += gridSize) {
+        const screenX = x - camera.x;
+        gameState.ctx.moveTo(screenX, 0);
+        gameState.ctx.lineTo(screenX, camera.height);
     }
     gameState.ctx.stroke();
     
     // Draw horizontal lines
     gameState.ctx.beginPath();
-    for (let y = 0; y < gameState.canvas.height; y += gridSize) {
-        gameState.ctx.moveTo(0, y);
-        gameState.ctx.lineTo(gameState.canvas.width, y);
+    for (let y = startY; y <= endY; y += gridSize) {
+        const screenY = y - camera.y;
+        gameState.ctx.moveTo(0, screenY);
+        gameState.ctx.lineTo(camera.width, screenY);
     }
     gameState.ctx.stroke();
 }
@@ -541,12 +680,15 @@ function drawGrid() {
  * Draw the player character
  */
 function drawPlayer() {
+    // Convert player world position to screen position
+    const screenPos = worldToScreen(player.x, player.y);
+    
     // Draw player shadow (only when not on ground)
     if (!player.isOnGround) {
         gameState.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         const shadowSize = player.width * (0.8 + 0.2 * (1 - Math.abs(player.velocityY) / 20));
-        const shadowX = player.x + (player.width - shadowSize) / 2;
-        const shadowY = player.y + player.height + 5;
+        const shadowX = screenPos.x + (player.width - shadowSize) / 2;
+        const shadowY = screenPos.y + player.height + 5;
         
         gameState.ctx.beginPath();
         gameState.ctx.ellipse(
@@ -561,32 +703,32 @@ function drawPlayer() {
     
     // Draw player body (red square)
     gameState.ctx.fillStyle = player.color;
-    gameState.ctx.fillRect(player.x, player.y, player.width, player.height);
+    gameState.ctx.fillRect(screenPos.x, screenPos.y, player.width, player.height);
     
     // Add a subtle inner highlight for visual appeal
     gameState.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    gameState.ctx.fillRect(player.x + 3, player.y + 3, player.width - 6, 8);
+    gameState.ctx.fillRect(screenPos.x + 3, screenPos.y + 3, player.width - 6, 8);
     
     // Add a darker border for definition
     gameState.ctx.strokeStyle = '#991b1b';
     gameState.ctx.lineWidth = 2;
-    gameState.ctx.strokeRect(player.x, player.y, player.width, player.height);
+    gameState.ctx.strokeRect(screenPos.x, screenPos.y, player.width, player.height);
     
     // Draw player "eyes" (small white dots)
     gameState.ctx.fillStyle = '#ffffff';
-    gameState.ctx.fillRect(player.x + 10, player.y + 12, 6, 6);
-    gameState.ctx.fillRect(player.x + player.width - 16, player.y + 12, 6, 6);
+    gameState.ctx.fillRect(screenPos.x + 10, screenPos.y + 12, 6, 6);
+    gameState.ctx.fillRect(screenPos.x + player.width - 16, screenPos.y + 12, 6, 6);
     
     // Draw direction indicator based on velocity
     if (Math.abs(player.velocityX) > 0.5) {
         gameState.ctx.fillStyle = player.velocityX > 0 ? '#22c55e' : '#3b82f6';
         const indicatorSize = 8;
         const indicatorX = player.velocityX > 0 ? 
-            player.x + player.width + 5 : 
-            player.x - indicatorSize - 5;
+            screenPos.x + player.width + 5 : 
+            screenPos.x - indicatorSize - 5;
         gameState.ctx.fillRect(
             indicatorX, 
-            player.y + player.height / 2 - indicatorSize / 2, 
+            screenPos.y + player.height / 2 - indicatorSize / 2, 
             indicatorSize, 
             indicatorSize
         );
@@ -596,10 +738,10 @@ function drawPlayer() {
     if (!player.isOnGround) {
         gameState.ctx.fillStyle = player.velocityY < 0 ? '#f59e0b' : '#ef4444';
         const jumpIndicatorSize = 6;
-        const jumpIndicatorX = player.x + player.width / 2 - jumpIndicatorSize / 2;
+        const jumpIndicatorX = screenPos.x + player.width / 2 - jumpIndicatorSize / 2;
         const jumpIndicatorY = player.velocityY < 0 ? 
-            player.y - jumpIndicatorSize - 5 : 
-            player.y + player.height + 5;
+            screenPos.y - jumpIndicatorSize - 5 : 
+            screenPos.y + player.height + 5;
         gameState.ctx.fillRect(
             jumpIndicatorX,
             jumpIndicatorY,
@@ -641,7 +783,7 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 280, 220);
+    ctx.fillRect(5, 5, 300, 240);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
@@ -669,14 +811,18 @@ function drawDebugInfo() {
     ctx.fillText(`Lag: ${gameState.debugInfo.lag.toFixed(2)}ms`, debugX, debugY);
     debugY += lineHeight;
     
-    // Canvas size
-    ctx.fillStyle = '#c084fc';
-    ctx.fillText(`Canvas: ${gameState.canvas.width} x ${gameState.canvas.height}`, debugX, debugY);
+    // Camera info header
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('=== CAMERA INFO ===', debugX, debugY);
     debugY += lineHeight;
     
-    // Game state
-    ctx.fillStyle = gameState.isRunning ? '#4ade80' : '#f87171';
-    ctx.fillText(`State: ${gameState.isRunning ? 'RUNNING' : 'PAUSED'}`, debugX, debugY);
+    // Camera position
+    ctx.fillStyle = '#c084fc';
+    ctx.fillText(`Position: (${Math.floor(camera.x)}, ${Math.floor(camera.y)})`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Camera target
+    ctx.fillText(`Target: (${Math.floor(camera.targetX)}, ${Math.floor(camera.targetY)})`, debugX, debugY);
     debugY += lineHeight;
     
     // Player info header
@@ -684,9 +830,9 @@ function drawDebugInfo() {
     ctx.fillText('=== PLAYER INFO ===', debugX, debugY);
     debugY += lineHeight;
     
-    // Player position
+    // Player position (world)
     ctx.fillStyle = '#ef4444';
-    ctx.fillText(`Position: (${Math.floor(player.x)}, ${Math.floor(player.y)})`, debugX, debugY);
+    ctx.fillText(`World Pos: (${Math.floor(player.x)}, ${Math.floor(player.y)})`, debugX, debugY);
     debugY += lineHeight;
     
     // Player velocity
@@ -701,19 +847,10 @@ function drawDebugInfo() {
     // Player state
     ctx.fillStyle = player.isOnGround ? '#22c55e' : '#f59e0b';
     ctx.fillText(`On Ground: ${player.isOnGround ? 'YES' : 'NO'}`, debugX, debugY);
-    debugY += lineHeight;
     
-    ctx.fillStyle = player.canJump ? '#22c55e' : '#ef4444';
-    ctx.fillText(`Can Jump: ${player.canJump ? 'YES' : 'NO'}`, debugX, debugY);
-    debugY += lineHeight;
-    
-    // Platform info
+    // World info
     ctx.fillStyle = '#ffcc00';
-    ctx.fillText('=== PLATFORMS ===', debugX, debugY);
-    debugY += lineHeight;
-    
-    ctx.fillStyle = '#c084fc';
-    ctx.fillText(`Active Platforms: ${platforms.length}`, debugX, debugY);
+    ctx.fillText(`World: ${WORLD.width} x ${WORLD.height}`, debugX + 150, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
@@ -740,3 +877,5 @@ window.GAME = GAME;
 window.player = player;
 window.keys = keys;
 window.platforms = platforms;
+window.camera = camera;
+window.WORLD = WORLD;
