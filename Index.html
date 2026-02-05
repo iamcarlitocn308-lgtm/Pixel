@@ -11,7 +11,10 @@ const GAME = {
     MS_PER_UPDATE: 1000 / 60, // Target time per frame in milliseconds
     DEBUG_MODE: true, // Set to true to show debug info
     PLAYER_SPEED: 300, // Pixels per second
-    PLAYER_FRICTION: 0.85 // Friction coefficient (0-1)
+    PLAYER_FRICTION: 0.85, // Friction coefficient (0-1)
+    GRAVITY: 900, // Pixels per second squared
+    JUMP_FORCE: -400, // Negative because up is negative Y
+    GROUND_LEVEL: null // Will be set based on canvas height
 };
 
 // Player object
@@ -23,7 +26,10 @@ const player = {
     color: '#ef4444', // Red color
     velocityX: 0,
     velocityY: 0,
-    maxSpeed: 8
+    maxSpeed: 8,
+    isOnGround: false,
+    canJump: true,
+    jumpCooldown: 0
 };
 
 // Keyboard input state
@@ -78,6 +84,9 @@ function initGame() {
     // Position player near bottom of screen
     positionPlayerNearBottom();
     
+    // Set ground level
+    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
+    
     // Hide loading overlay
     document.getElementById('loadingOverlay').style.display = 'none';
     
@@ -88,6 +97,7 @@ function initGame() {
     console.log('Game initialized successfully!');
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
     console.log('Player position:', player.x, player.y);
+    console.log('Ground level:', GAME.GROUND_LEVEL);
     console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
 }
 
@@ -106,12 +116,26 @@ function setupKeyboardControls() {
                 break;
             case 'w':
                 keys.w = true;
+                if (player.isOnGround && player.canJump) {
+                    player.velocityY = GAME.JUMP_FORCE;
+                    player.isOnGround = false;
+                    player.canJump = false;
+                    player.jumpCooldown = 0.2; // Small cooldown to prevent double jumps
+                    console.log('Jump!');
+                }
                 break;
             case 's':
                 keys.s = true;
                 break;
             case ' ':
                 keys.space = true;
+                if (player.isOnGround && player.canJump) {
+                    player.velocityY = GAME.JUMP_FORCE;
+                    player.isOnGround = false;
+                    player.canJump = false;
+                    player.jumpCooldown = 0.2; // Small cooldown to prevent double jumps
+                    console.log('Jump! (Space)');
+                }
                 break;
             case 'arrowleft':
             case 'left':
@@ -124,6 +148,13 @@ function setupKeyboardControls() {
             case 'arrowup':
             case 'up':
                 keys.arrowUp = true;
+                if (player.isOnGround && player.canJump) {
+                    player.velocityY = GAME.JUMP_FORCE;
+                    player.isOnGround = false;
+                    player.canJump = false;
+                    player.jumpCooldown = 0.2; // Small cooldown to prevent double jumps
+                    console.log('Jump! (Arrow Up)');
+                }
                 break;
             case 'arrowdown':
             case 'down':
@@ -193,6 +224,7 @@ function positionPlayerNearBottom() {
     
     // Position player near bottom (with some margin)
     player.y = gameState.canvas.height - player.height - 50;
+    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
 }
 
 /**
@@ -225,8 +257,12 @@ function resizeCanvas() {
         positionPlayerNearBottom();
     }
     
+    // Update ground level
+    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
+    
     console.log('Canvas resized to:', gameState.canvas.width, 'x', gameState.canvas.height);
     console.log('Player repositioned to:', player.x, player.y);
+    console.log('Ground level updated to:', GAME.GROUND_LEVEL);
 }
 
 /**
@@ -272,6 +308,9 @@ function gameLoop() {
     // Draw game elements
     drawBackground();
     
+    // Draw ground line
+    drawGround();
+    
     // Draw player
     drawPlayer();
     
@@ -291,6 +330,13 @@ function gameLoop() {
  * @param {number} deltaTime - Time since last frame in seconds
  */
 function updatePlayer(deltaTime) {
+    // Update jump cooldown
+    if (player.jumpCooldown > 0) {
+        player.jumpCooldown -= deltaTime;
+    } else if (!player.canJump && player.isOnGround) {
+        player.canJump = true; // Reset jump ability when back on ground
+    }
+    
     // Handle horizontal movement input
     let moveLeft = keys.a || keys.arrowLeft;
     let moveRight = keys.d || keys.arrowRight;
@@ -317,10 +363,23 @@ function updatePlayer(deltaTime) {
         player.velocityX = 0;
     }
     
+    // Apply gravity (constantly pulls player down)
+    player.velocityY += GAME.GRAVITY * deltaTime;
+    
     // Update position based on velocity
     player.x += player.velocityX;
+    player.y += player.velocityY;
     
-    // Keep player within canvas bounds
+    // Check if player is on the ground
+    if (player.y >= GAME.GROUND_LEVEL) {
+        player.y = GAME.GROUND_LEVEL;
+        player.velocityY = 0;
+        player.isOnGround = true;
+    } else {
+        player.isOnGround = false;
+    }
+    
+    // Keep player within canvas horizontal bounds
     if (player.x < 0) {
         player.x = 0;
         player.velocityX = 0; // Stop movement at boundary
@@ -328,6 +387,29 @@ function updatePlayer(deltaTime) {
         player.x = gameState.canvas.width - player.width;
         player.velocityX = 0; // Stop movement at boundary
     }
+}
+
+/**
+ * Draw a ground line for visual reference
+ */
+function drawGround() {
+    const ctx = gameState.ctx;
+    
+    // Draw ground line
+    ctx.strokeStyle = player.isOnGround ? '#22c55e' : '#6b7280';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, GAME.GROUND_LEVEL + player.height);
+    ctx.lineTo(gameState.canvas.width, GAME.GROUND_LEVEL + player.height);
+    ctx.stroke();
+    
+    // Draw ground shadow
+    const gradient = ctx.createLinearGradient(0, GAME.GROUND_LEVEL + player.height, 0, GAME.GROUND_LEVEL + player.height + 30);
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, GAME.GROUND_LEVEL + player.height, gameState.canvas.width, 30);
 }
 
 /**
@@ -386,6 +468,25 @@ function drawGrid() {
  * Draw the player character
  */
 function drawPlayer() {
+    // Draw player shadow (only when not on ground)
+    if (!player.isOnGround) {
+        gameState.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        const shadowY = GAME.GROUND_LEVEL + player.height;
+        const shadowHeight = 10;
+        const shadowWidth = player.width * (0.8 + 0.2 * (1 - (player.y - GAME.GROUND_LEVEL) / 300));
+        const shadowX = player.x + (player.width - shadowWidth) / 2;
+        
+        gameState.ctx.beginPath();
+        gameState.ctx.ellipse(
+            shadowX + shadowWidth / 2,
+            shadowY + shadowHeight / 2,
+            shadowWidth / 2,
+            shadowHeight / 2,
+            0, 0, Math.PI * 2
+        );
+        gameState.ctx.fill();
+    }
+    
     // Draw player body (red square)
     gameState.ctx.fillStyle = player.color;
     gameState.ctx.fillRect(player.x, player.y, player.width, player.height);
@@ -416,6 +517,22 @@ function drawPlayer() {
             player.y + player.height / 2 - indicatorSize / 2, 
             indicatorSize, 
             indicatorSize
+        );
+    }
+    
+    // Draw jump indicator
+    if (!player.isOnGround) {
+        gameState.ctx.fillStyle = player.velocityY < 0 ? '#f59e0b' : '#ef4444';
+        const jumpIndicatorSize = 6;
+        const jumpIndicatorX = player.x + player.width / 2 - jumpIndicatorSize / 2;
+        const jumpIndicatorY = player.velocityY < 0 ? 
+            player.y - jumpIndicatorSize - 5 : 
+            player.y + player.height + 5;
+        gameState.ctx.fillRect(
+            jumpIndicatorX,
+            jumpIndicatorY,
+            jumpIndicatorSize,
+            jumpIndicatorSize
         );
     }
 }
@@ -452,7 +569,7 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 260, 180);
+    ctx.fillRect(5, 5, 280, 200);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
@@ -502,11 +619,20 @@ function drawDebugInfo() {
     
     // Player velocity
     ctx.fillStyle = player.velocityX !== 0 ? '#22c55e' : '#94a3b8';
-    ctx.fillText(`Velocity X: ${player.velocityX.toFixed(2)} px/sec`, debugX, debugY);
+    ctx.fillText(`Velocity X: ${player.velocityX.toFixed(2)}`, debugX, debugY);
     debugY += lineHeight;
     
-    // Player size
-    ctx.fillText(`Size: ${player.width} x ${player.height}`, debugX, debugY);
+    ctx.fillStyle = player.velocityY !== 0 ? '#f59e0b' : '#94a3b8';
+    ctx.fillText(`Velocity Y: ${player.velocityY.toFixed(2)}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    // Player state
+    ctx.fillStyle = player.isOnGround ? '#22c55e' : '#f59e0b';
+    ctx.fillText(`On Ground: ${player.isOnGround ? 'YES' : 'NO'}`, debugX, debugY);
+    debugY += lineHeight;
+    
+    ctx.fillStyle = player.canJump ? '#22c55e' : '#ef4444';
+    ctx.fillText(`Can Jump: ${player.canJump ? 'YES' : 'NO'}`, debugX, debugY);
     debugY += lineHeight;
     
     // Controls info
@@ -515,12 +641,8 @@ function drawDebugInfo() {
     debugY += lineHeight;
     
     // Key states
-    ctx.fillStyle = keys.a || keys.arrowLeft ? '#22c55e' : '#ef4444';
-    ctx.fillText(`A/←: ${keys.a || keys.arrowLeft ? 'PRESSED' : 'RELEASED'}`, debugX, debugY);
-    debugY += lineHeight;
-    
-    ctx.fillStyle = keys.d || keys.arrowRight ? '#22c55e' : '#ef4444';
-    ctx.fillText(`D/→: ${keys.d || keys.arrowRight ? 'PRESSED' : 'RELEASED'}`, debugX, debugY);
+    ctx.fillStyle = keys.w || keys.arrowUp || keys.space ? '#22c55e' : '#ef4444';
+    ctx.fillText(`W/↑/SPACE: ${keys.w || keys.arrowUp || keys.space ? 'JUMP' : '---'}`, debugX, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
