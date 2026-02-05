@@ -13,8 +13,7 @@ const GAME = {
     PLAYER_SPEED: 300, // Pixels per second
     PLAYER_FRICTION: 0.85, // Friction coefficient (0-1)
     GRAVITY: 900, // Pixels per second squared
-    JUMP_FORCE: -400, // Negative because up is negative Y
-    GROUND_LEVEL: null // Will be set based on canvas height
+    JUMP_FORCE: -400 // Negative because up is negative Y
 };
 
 // Player object
@@ -31,6 +30,18 @@ const player = {
     canJump: true,
     jumpCooldown: 0
 };
+
+// Platforms array
+const platforms = [
+    // Format: {x, y, width, height, color}
+    { x: 50, y: 450, width: 200, height: 20, color: '#10b981' },
+    { x: 300, y: 350, width: 150, height: 20, color: '#3b82f6' },
+    { x: 500, y: 250, width: 180, height: 20, color: '#8b5cf6' },
+    { x: 200, y: 150, width: 120, height: 20, color: '#f59e0b' },
+    { x: 600, y: 400, width: 100, height: 20, color: '#ec4899' },
+    // Ground platform
+    { x: 0, y: 550, width: 800, height: 50, color: '#64748b' }
+];
 
 // Keyboard input state
 const keys = {
@@ -81,11 +92,8 @@ function initGame() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
-    // Position player near bottom of screen
-    positionPlayerNearBottom();
-    
-    // Set ground level
-    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
+    // Position player on first platform
+    positionPlayerOnStartPlatform();
     
     // Hide loading overlay
     document.getElementById('loadingOverlay').style.display = 'none';
@@ -97,7 +105,7 @@ function initGame() {
     console.log('Game initialized successfully!');
     console.log('Canvas size:', gameState.canvas.width, 'x', gameState.canvas.height);
     console.log('Player position:', player.x, player.y);
-    console.log('Ground level:', GAME.GROUND_LEVEL);
+    console.log('Platforms created:', platforms.length);
     console.log('Game loop started with target FPS:', GAME.TARGET_FPS);
 }
 
@@ -216,15 +224,13 @@ function setupKeyboardControls() {
 }
 
 /**
- * Position player near the bottom of the screen
+ * Position player on the starting platform
  */
-function positionPlayerNearBottom() {
-    // Center player horizontally
-    player.x = (gameState.canvas.width - player.width) / 2;
-    
-    // Position player near bottom (with some margin)
-    player.y = gameState.canvas.height - player.height - 50;
-    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
+function positionPlayerOnStartPlatform() {
+    // Start on the first platform
+    const startPlatform = platforms[0];
+    player.x = startPlatform.x + startPlatform.width / 2 - player.width / 2;
+    player.y = startPlatform.y - player.height;
 }
 
 /**
@@ -254,15 +260,33 @@ function resizeCanvas() {
         player.y = Math.max(0, Math.min(player.y, gameState.canvas.height - player.height));
     } else {
         // First time setup
-        positionPlayerNearBottom();
+        positionPlayerOnStartPlatform();
     }
     
-    // Update ground level
-    GAME.GROUND_LEVEL = gameState.canvas.height - player.height - 50;
+    // Adjust platforms to maintain relative positions
+    for (let i = 0; i < platforms.length; i++) {
+        const platform = platforms[i];
+        if (prevWidth > 0 && prevHeight > 0) {
+            const xRatio = platform.x / prevWidth;
+            const yRatio = platform.y / prevHeight;
+            
+            platform.x = xRatio * gameState.canvas.width;
+            platform.y = yRatio * gameState.canvas.height;
+            
+            // Scale platform width proportionally
+            platform.width = (platform.width / prevWidth) * gameState.canvas.width;
+        }
+        
+        // Ensure ground platform spans full width
+        if (i === platforms.length - 1) { // Ground platform is last
+            platform.x = 0;
+            platform.width = gameState.canvas.width;
+            platform.y = gameState.canvas.height - platform.height;
+        }
+    }
     
     console.log('Canvas resized to:', gameState.canvas.width, 'x', gameState.canvas.height);
     console.log('Player repositioned to:', player.x, player.y);
-    console.log('Ground level updated to:', GAME.GROUND_LEVEL);
 }
 
 /**
@@ -308,8 +332,8 @@ function gameLoop() {
     // Draw game elements
     drawBackground();
     
-    // Draw ground line
-    drawGround();
+    // Draw platforms
+    drawPlatforms();
     
     // Draw player
     drawPlayer();
@@ -323,6 +347,31 @@ function gameLoop() {
     if (gameState.isRunning) {
         gameState.animationFrameId = requestAnimationFrame(gameLoop);
     }
+}
+
+/**
+ * Check collision between player and a platform
+ * @param {Object} platform - Platform object
+ * @returns {boolean} - True if player is colliding with platform from top
+ */
+function checkPlatformCollision(platform) {
+    // Check if player is above the platform and moving downward
+    const isAbove = player.y + player.height <= platform.y + 5; // Small tolerance
+    const isMovingDown = player.velocityY > 0;
+    
+    // Check if player is horizontally within platform bounds
+    const playerRight = player.x + player.width;
+    const playerBottom = player.y + player.height;
+    const platformRight = platform.x + platform.width;
+    
+    const isHorizontallyAligned = 
+        player.x < platformRight && 
+        playerRight > platform.x;
+    
+    // Check if player's bottom is near platform top
+    const isTouchingTop = playerBottom >= platform.y && playerBottom <= platform.y + 10;
+    
+    return isAbove && isMovingDown && isHorizontallyAligned && isTouchingTop;
 }
 
 /**
@@ -370,13 +419,18 @@ function updatePlayer(deltaTime) {
     player.x += player.velocityX;
     player.y += player.velocityY;
     
-    // Check if player is on the ground
-    if (player.y >= GAME.GROUND_LEVEL) {
-        player.y = GAME.GROUND_LEVEL;
-        player.velocityY = 0;
-        player.isOnGround = true;
-    } else {
-        player.isOnGround = false;
+    // Reset ground state - will be set to true if on any platform
+    player.isOnGround = false;
+    
+    // Check collisions with all platforms
+    for (const platform of platforms) {
+        if (checkPlatformCollision(platform)) {
+            // Land on platform
+            player.y = platform.y - player.height;
+            player.velocityY = 0;
+            player.isOnGround = true;
+            break; // Only stand on one platform at a time
+        }
     }
     
     // Keep player within canvas horizontal bounds
@@ -387,29 +441,48 @@ function updatePlayer(deltaTime) {
         player.x = gameState.canvas.width - player.width;
         player.velocityX = 0; // Stop movement at boundary
     }
+    
+    // Prevent player from going above the top of the screen
+    if (player.y < 0) {
+        player.y = 0;
+        player.velocityY = 0;
+    }
 }
 
 /**
- * Draw a ground line for visual reference
+ * Draw all platforms
  */
-function drawGround() {
-    const ctx = gameState.ctx;
-    
-    // Draw ground line
-    ctx.strokeStyle = player.isOnGround ? '#22c55e' : '#6b7280';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(0, GAME.GROUND_LEVEL + player.height);
-    ctx.lineTo(gameState.canvas.width, GAME.GROUND_LEVEL + player.height);
-    ctx.stroke();
-    
-    // Draw ground shadow
-    const gradient = ctx.createLinearGradient(0, GAME.GROUND_LEVEL + player.height, 0, GAME.GROUND_LEVEL + player.height + 30);
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, GAME.GROUND_LEVEL + player.height, gameState.canvas.width, 30);
+function drawPlatforms() {
+    for (const platform of platforms) {
+        // Draw platform body
+        gameState.ctx.fillStyle = platform.color;
+        gameState.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+        
+        // Draw platform top highlight
+        gameState.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        gameState.ctx.fillRect(platform.x, platform.y, platform.width, 4);
+        
+        // Draw platform shadow
+        gameState.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        gameState.ctx.fillRect(platform.x, platform.y + platform.height, platform.width, 3);
+        
+        // Draw platform sides
+        gameState.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        gameState.ctx.lineWidth = 2;
+        gameState.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+        
+        // Draw platform label for debugging
+        if (GAME.DEBUG_MODE) {
+            gameState.ctx.fillStyle = '#ffffff';
+            gameState.ctx.font = '12px monospace';
+            gameState.ctx.textAlign = 'center';
+            gameState.ctx.fillText(
+                `Platform ${platforms.indexOf(platform) + 1}`,
+                platform.x + platform.width / 2,
+                platform.y + platform.height / 2 + 4
+            );
+        }
+    }
 }
 
 /**
@@ -471,17 +544,16 @@ function drawPlayer() {
     // Draw player shadow (only when not on ground)
     if (!player.isOnGround) {
         gameState.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        const shadowY = GAME.GROUND_LEVEL + player.height;
-        const shadowHeight = 10;
-        const shadowWidth = player.width * (0.8 + 0.2 * (1 - (player.y - GAME.GROUND_LEVEL) / 300));
-        const shadowX = player.x + (player.width - shadowWidth) / 2;
+        const shadowSize = player.width * (0.8 + 0.2 * (1 - Math.abs(player.velocityY) / 20));
+        const shadowX = player.x + (player.width - shadowSize) / 2;
+        const shadowY = player.y + player.height + 5;
         
         gameState.ctx.beginPath();
         gameState.ctx.ellipse(
-            shadowX + shadowWidth / 2,
-            shadowY + shadowHeight / 2,
-            shadowWidth / 2,
-            shadowHeight / 2,
+            shadowX + shadowSize / 2,
+            shadowY,
+            shadowSize / 2,
+            5,
             0, 0, Math.PI * 2
         );
         gameState.ctx.fill();
@@ -569,7 +641,7 @@ function drawDebugInfo() {
     
     // Draw debug background panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 280, 200);
+    ctx.fillRect(5, 5, 280, 220);
     
     // Draw debug text
     ctx.fillStyle = '#4cc9f0';
@@ -635,14 +707,13 @@ function drawDebugInfo() {
     ctx.fillText(`Can Jump: ${player.canJump ? 'YES' : 'NO'}`, debugX, debugY);
     debugY += lineHeight;
     
-    // Controls info
+    // Platform info
     ctx.fillStyle = '#ffcc00';
-    ctx.fillText('=== CONTROLS ===', debugX, debugY);
+    ctx.fillText('=== PLATFORMS ===', debugX, debugY);
     debugY += lineHeight;
     
-    // Key states
-    ctx.fillStyle = keys.w || keys.arrowUp || keys.space ? '#22c55e' : '#ef4444';
-    ctx.fillText(`W/↑/SPACE: ${keys.w || keys.arrowUp || keys.space ? 'JUMP' : '---'}`, debugX, debugY);
+    ctx.fillStyle = '#c084fc';
+    ctx.fillText(`Active Platforms: ${platforms.length}`, debugX, debugY);
 }
 
 // Handle window focus/blur to pause/resume game
@@ -668,3 +739,4 @@ window.gameState = gameState;
 window.GAME = GAME;
 window.player = player;
 window.keys = keys;
+window.platforms = platforms;
