@@ -1,3 +1,4 @@
+document.body.addEventListener("touchstart", () => {}, { once: true });
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
